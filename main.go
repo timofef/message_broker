@@ -49,7 +49,7 @@ func (b *Broker) AddMessage(queueName string, body string) {
 	b.messageQueues[queueName] <- &Message{body: body}
 }
 
-func (b *Broker) TakeMessage(cancel context.CancelFunc, queueName string, withTimeout bool) chan string {
+func (b *Broker) TakeMessage(cancel context.CancelFunc, queueName string, withTimeout bool) *Request {
 	if _, exists := b.messageQueues[queueName]; !exists {
 		b.messageQueues[queueName] = make(chan *Message, MessageQueueLen)
 		b.requestQueues[queueName] = make(chan *Request, RequestQueueLen)
@@ -63,13 +63,15 @@ func (b *Broker) TakeMessage(cancel context.CancelFunc, queueName string, withTi
 		lr := len(b.requestQueues[queueName])
 		if lr != 0 || lm == 0 {
 			cancel()
-			return nil
+			return &Request{}
 		}
 	}
 
-	b.requestQueues[queueName] <- &Request{canceled: false, response: responseChan}
+	req := &Request{canceled: false, response: responseChan}
 
-	return responseChan
+	b.requestQueues[queueName] <- req
+
+	return req
 }
 
 func (b *Broker) worker(ctx context.Context, queueName string,
@@ -127,15 +129,16 @@ func Get(b *Broker, w http.ResponseWriter, r *http.Request) {
 	}
 	defer cancel()
 
-	messageChan := b.TakeMessage(cancel, queueName, withTimeout)
+	request := b.TakeMessage(cancel, queueName, withTimeout)
 	select {
-	case m := <-messageChan:
+	case m := <-(*request).response:
 		_, err := w.Write([]byte(m))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 	case <-ctx.Done():
+		(*request).canceled = true
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
