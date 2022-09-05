@@ -159,7 +159,7 @@ func main() {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
-	fmt.Println(port)
+
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		fmt.Println(err)
 	}
